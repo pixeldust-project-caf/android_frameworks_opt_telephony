@@ -152,6 +152,8 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
     public static final String NETWORK_SELECTION_NAME_KEY = "network_selection_name_key";
     // Key used to read and write the saved network selection operator short name
     public static final String NETWORK_SELECTION_SHORT_KEY = "network_selection_short_key";
+    public static final String KEY_DO_NOT_SHOW_LIMITED_SERVICE_ALERT
+            = "key_do_not_show_limited_service_alert";
 
 
     // Key used to read/write "disable data connection on boot" pref (used for testing)
@@ -2344,6 +2346,15 @@ public abstract class Phone extends Handler implements PhoneInternalInterface {
      */
     public void resetModemConfig(Message response) {
         mCi.nvResetConfig(3 /* factory NV reset */, response);
+    }
+
+    /**
+     * Perform modem configuration erase. Used for network reset
+     *
+     * @param response Callback message.
+     */
+    public void eraseModemConfig(Message response) {
+        mCi.nvResetConfig(2 /* erase NV */, response);
     }
 
     public void notifyDataActivity() {
