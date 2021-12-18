@@ -94,27 +94,6 @@ import java.util.concurrent.TimeUnit;
 public class TransportManager extends Handler {
     private final String mLogTag;
 
-    // Key is the access network, value is the transport.
-    private static final Map<Integer, Integer> ACCESS_NETWORK_TRANSPORT_TYPE_MAP;
-
-    static {
-        ACCESS_NETWORK_TRANSPORT_TYPE_MAP = new HashMap<>();
-        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.GERAN,
-                AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
-        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.UTRAN,
-                AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
-        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.EUTRAN,
-                AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
-        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.CDMA2000,
-                AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
-        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.NGRAN,
-                AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
-        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.IWLAN,
-                AccessNetworkConstants.TRANSPORT_TYPE_WLAN);
-        ACCESS_NETWORK_TRANSPORT_TYPE_MAP.put(AccessNetworkType.NGRAN,
-                AccessNetworkConstants.TRANSPORT_TYPE_WWAN);
-    }
-
     private static final int EVENT_QUALIFIED_NETWORKS_CHANGED = 1;
 
     private static final int EVENT_EVALUATE_TRANSPORT_PREFERENCE = 2;
@@ -266,55 +245,6 @@ public class TransportManager extends Handler {
         }
     }
 
-    private boolean isHandoverNeeded(QualifiedNetworks newNetworks) {
-        int apnType = newNetworks.apnType;
-        int[] newNetworkList = newNetworks.qualifiedNetworks;
-        int[] currentNetworkList = mCurrentAvailableNetworks.get(apnType);
-
-        if (ArrayUtils.isEmpty(currentNetworkList)
-                && ACCESS_NETWORK_TRANSPORT_TYPE_MAP.get(newNetworkList[0])
-                != getCurrentTransport(apnType)) {
-            // This is a special case that when first time boot up in airplane mode with wifi on,
-            // qualified network service reports IWLAN as the preferred network. Although there
-            // is no live data connection on cellular, there might be network requests which were
-            // already sent to cellular DCT. In this case, we still need to handover the network
-            // request to the new transport.
-            return true;
-        }
-
-        // If the current network list is empty, but the new network list is not, then we can
-        // directly setup data on the new network. If the current network list is not empty, but
-        // the new network is, then we can tear down the data directly. Therefore if one of the
-        // list is empty, then we don't need to do handover.
-        if (ArrayUtils.isEmpty(newNetworkList) || ArrayUtils.isEmpty(currentNetworkList)) {
-            return false;
-        }
-
-        if (mPendingHandoverApns.get(newNetworks.apnType)
-                == ACCESS_NETWORK_TRANSPORT_TYPE_MAP.get(newNetworkList[0])) {
-            log("Handover not needed. There is already an ongoing handover.");
-            return false;
-        }
-
-        // The list is networks in the preferred order. For now we only pick the first element
-        // because it's the most preferred. In the future we should also consider the rest in the
-        // list, for example, the first one violates carrier/user policy.
-        return !ACCESS_NETWORK_TRANSPORT_TYPE_MAP.get(newNetworkList[0])
-                .equals(getCurrentTransport(newNetworks.apnType));
-    }
-
-    private static boolean areNetworksValid(QualifiedNetworks networks) {
-        if (networks.qualifiedNetworks == null || networks.qualifiedNetworks.length == 0) {
-            return false;
-        }
-        for (int network : networks.qualifiedNetworks) {
-            if (!ACCESS_NETWORK_TRANSPORT_TYPE_MAP.containsKey(network)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     /**
      * Set the current transport of apn type.
      *
@@ -338,80 +268,6 @@ public class TransportManager extends Handler {
 
     private boolean isHandoverPending() {
         return mPendingHandoverApns.size() > 0;
-    }
-
-    private void updateAvailableNetworks() {
-        if (mQueuedNetworksList.size() == 0) {
-            log("Nothing in the available network list queue.");
-            return;
-        }
-
-        List<QualifiedNetworks> networksList = mQueuedNetworksList.peek();
-        logl("updateAvailableNetworks: " + networksList);
-        for (QualifiedNetworks networks : networksList) {
-            if (areNetworksValid(networks)) {
-                if (isHandoverNeeded(networks)) {
-                    // If handover is needed, perform the handover works. For now we only pick the
-                    // first element because it's the most preferred. In the future we should also
-                    // consider the rest in the list, for example, the first one violates
-                    // carrier/user policy.
-                    int targetTransport = ACCESS_NETWORK_TRANSPORT_TYPE_MAP.get(
-                            networks.qualifiedNetworks[0]);
-                    logl("Handover needed for APN type: "
-                            + ApnSetting.getApnTypeString(networks.apnType)
-                            + ", target transport: "
-                            + AccessNetworkConstants.transportTypeToString(targetTransport));
-                    // No matter whether this APN is in pending handover list,
-                    // Here prohibit the handover request for different target transport till the
-                    // previous requests gets completed
-                    if(mPendingHandoverApns.size() > 0
-                            && mPendingHandoverApns.indexOfValue(targetTransport) < 0) {
-                        log("Wait for the prevoius traget's handover completed.");
-                        return;
-                    }
-                    mPendingHandoverApns.put(networks.apnType, targetTransport);
-                    mHandoverNeededEventRegistrants.notifyResult(
-                            new HandoverParams(networks.apnType, targetTransport,
-                                    (success, fallback) -> {
-                                        // The callback for handover completed.
-                                        if (success) {
-                                            logl("Handover succeeded.");
-                                        } else {
-                                            logl("APN type "
-                                                    + ApnSetting.getApnTypeString(networks.apnType)
-                                                    + " handover to "
-                                                    + AccessNetworkConstants.transportTypeToString(
-                                                    targetTransport) + " failed."
-                                                    + ", fallback=" + fallback);
-                                        }
-                                        if (success || !fallback) {
-                                            // If handover succeeds or failed without falling back
-                                            // to the original transport, we should move to the new
-                                            // transport (even if it is failed).
-                                            setCurrentTransport(networks.apnType, targetTransport);
-                                        }
-                                        mPendingHandoverApns.delete(networks.apnType);
-
-                                        // If there are still pending available network changes, we
-                                        // need to process the rest.
-                                        if (mQueuedNetworksList.size() > 0
-                                                && !isHandoverPending()) {
-                                            sendEmptyMessage(EVENT_UPDATE_AVAILABLE_NETWORKS);
-                                        }
-                                    }));
-                }
-                mCurrentAvailableNetworks.put(networks.apnType, networks.qualifiedNetworks);
-            } else {
-                loge("Invalid networks received: " + networks);
-            }
-        }
-        // Remove the handled qualified networks
-        mQueuedNetworksList.remove();
-
-        // If there are still pending available network changes, we need to process the rest.
-        if (mQueuedNetworksList.size() > 0 && !isHandoverPending()) {
-            sendEmptyMessage(EVENT_UPDATE_AVAILABLE_NETWORKS);
-        }
     }
 
     /**
