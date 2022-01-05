@@ -1405,7 +1405,7 @@ public class GsmCdmaPhone extends Phone {
         boolean useImsForPsOnlyCall = useImsForPsOnlyCall();
 
         if (DBG) {
-            logd("useImsForCall=" + useImsForCall
+            logi("useImsForCall=" + useImsForCall
                     + ", useImsForPsOnlyCall=" + useImsForPsOnlyCall
                     + ", useOnlyDialedSimEccList=" + useOnlyDialedSimEccList
                     + ", isEmergency=" + isEmergency
