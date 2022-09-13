@@ -1803,7 +1803,8 @@ public class PhoneSwitcher extends Handler {
         return (!phone.getBackgroundCall().isIdle()
                 || !phone.getForegroundCall().isIdle()
                 || phone.getForegroundCall().getState() == Call.State.DISCONNECTING
-                || phone.getRingingCall().isRinging());
+                || phone.getRingingCall().isRinging()
+                || phone.getRingingCall().getState() == Call.State.DISCONNECTING);
     }
 
     private void updateHalCommandToUse() {
