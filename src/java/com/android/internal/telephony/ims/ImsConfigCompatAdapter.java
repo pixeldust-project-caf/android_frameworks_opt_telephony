@@ -34,7 +34,6 @@ public class ImsConfigCompatAdapter extends ImsConfigImplBase {
     public static final int FAILED =  1;
 
     public ImsConfigCompatAdapter(IImsConfig config) {
-        super(Runnable::run);
         mOldConfigInterface = config;
     }
 
