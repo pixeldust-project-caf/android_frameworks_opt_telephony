@@ -441,6 +441,7 @@ public class LinkBandwidthEstimator extends Handler {
             return;
         }
         mIsOnDefaultRoute = isOnDefaultRoute;
+        logd("mIsOnDefaultRoute " + mIsOnDefaultRoute);
         handleTrafficStatsPollConditionChanged();
     }
 
@@ -465,6 +466,13 @@ public class LinkBandwidthEstimator extends Handler {
         if (mScreenOn && mIsOnDefaultRoute && mIsOnActiveData) {
             updateDataRatCellIdentityBandwidth();
             handleTrafficStatsPoll();
+        } else {
+            logd("Traffic status poll stopped");
+            if (mDataActivity != TelephonyManager.DATA_ACTIVITY_NONE) {
+                mDataActivity = TelephonyManager.DATA_ACTIVITY_NONE;
+                mLinkBandwidthEstimatorCallbacks.forEach(callback -> callback.invokeFromExecutor(
+                        () -> callback.onDataActivityChanged(mDataActivity)));
+            }
         }
     }
 
@@ -715,7 +723,7 @@ public class LinkBandwidthEstimator extends Handler {
             int filterInKbps = mBwSampleValid ? mBwSampleKbps : avgKbps;
 
             long currTimeMs = mTelephonyFacade.getElapsedSinceBootMillis();
-            int timeDeltaSec = (int) (currTimeMs - mBwSampleValidTimeMs) / 1000;
+            int timeDeltaSec = (int) ((currTimeMs - mBwSampleValidTimeMs) / 1000);
 
             // If the operation condition changes significantly since the last update
             // or the sample has higher BW, use a faster filter. Otherwise, use a slow filter
